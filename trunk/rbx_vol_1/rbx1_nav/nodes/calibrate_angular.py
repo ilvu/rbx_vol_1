@@ -2,7 +2,7 @@
 
 """ calibrate_angular.py - Version 0.1 2012-03-24
 
-    Rotate the robot 360 degrees to check the PID parameters of the base controller.
+    Rotate the robot 360 degrees to check the odometry parameters of the base controller.
 
     Created for the Pi Robot Project: http://www.pirobot.org
     Copyright (c) 2012 Patrick Goebel.  All rights reserved.
@@ -23,18 +23,17 @@
 
 import roslib; roslib.load_manifest('rbx1_nav')
 import rospy
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, Quaternion
 from nav_msgs.msg import Odometry
-from tf.transformations import quaternion_from_euler
-
-from math import radians, copysign, pi
-import PyKDL
-import threading
+from dynamic_reconfigure.server import Server
+import dynamic_reconfigure.client
+from rbx1_nav.cfg import CalibrateAngularConfig
+import tf
+from math import radians, copysign
+from transform_utils import quat_to_angle, normalize_angle
 
 class CalibrateAngular():
     def __init__(self):
-        self.lock = threading.Lock()                                            
-
         # Give the node a name
         rospy.init_node('calibrate_angular', anonymous=False)
         
@@ -42,83 +41,106 @@ class CalibrateAngular():
         rospy.on_shutdown(self.shutdown)
         
         # How fast will we check the odometry values?
-        rate = 50
-        tick = 1.0 / rate
+        self.rate = 30
+        r = rospy.Rate(self.rate)
         
-        # Set the parameters of our target square
-        turn_angle = quaternion_from_euler(0, 180, 0) # degrees converted to radians
-        q_turn_angle = PyKDL.Rotation.Quaternion(*turn_angle)
-        speed_angular = 0.7 # radians per second
-        tolerance_angular = radians(5) # degrees converted to radians
+        # The test angle is 360 degrees
+        self.test_angle = radians(rospy.get_param('~test_angle', 360.0))
+
+        self.speed = rospy.get_param('~speed', 0.7) # radians per second
+        self.tolerance = rospy.get_param('tolerance', radians(5)) # degrees converted to radians
+        self.odom_angular_scale_correction = rospy.get_param('~odom_angular_scale_correction', 1.0)
+        self.target_reached = rospy.get_param('~target_reached', False)
+        
+        # Fire up the dynamic_reconfigure server
+        dyn_server = Server(CalibrateAngularConfig, self.dynamic_reconfigure_callback)
+        
+        # Connect to the dynamic_reconfigure server
+        dyn_client = dynamic_reconfigure.client.Client("calibrate_angular", timeout=60)
         
         # Publisher to control the robot's speed
         self.cmd_vel = rospy.Publisher('/cmd_vel', Twist)
         
-        # Variable to hold the current odometry angle in radians
-        q_start_angle = None
-        self.q_odom_angle = None
-        
-        # Subscribe to the /odom topic to get odometry data.  Set the callback to the self.odom_update function.
-        rospy.Subscriber('/odom', Odometry, self.update_odom)
-        
-        # Wait for the /odom topic to become available
-        rospy.wait_for_message('/odom', Odometry)
-        
-        self.odom = Odometry()
-        
-        # Wait until we actually have some data
-        while self.q_odom_angle is None:
-            rospy.sleep(1)
+        # The base frame is base_footprint for the TurtleBot but base_link for Pi Robot
+        self.base_frame = rospy.get_param('~base_frame', '/base_link')
 
-        # Get the starting angle
-        q_start_angle = self.q_odom_angle
+        # The odom frame is usually just /odom
+        self.odom_frame = rospy.get_param('~odom_frame', '/odom')
+
+        # Initialize the tf listener
+        self.tf_listener = tf.TransformListener()
         
-        # Set the target angle   
-        q_target_angle = q_turn_angle * q_start_angle 
-        
-        # Are we there yet?
-        target_reached = False
-        
-        while not target_reached and not rospy.is_shutdown():
-            move_cmd = Twist()
+        # Make sure we see the odom and base frames
+        self.tf_listener.waitForTransform(self.odom_frame, self.base_frame, rospy.Time(), rospy.Duration(60.0))
             
-            # Get the angular distance from the target
-            with self.lock:    
-                delta_q = self.q_odom_angle * q_target_angle.Inverse()
-            
-            delta_rpy = delta_q.GetRPY()
-            delta_angle = delta_rpy[2]
+        rospy.loginfo("Bring up dynamic_reconfigure to control the test.")
+        
+        reverse = 1
+        
+        while not rospy.is_shutdown():
+            # Execute the rotation
+
+            if not self.target_reached:
+                # Get the current rotation angle from tf
+                self.odom_angle = self.get_odom_angle()
                 
-            # Are we close enough?
-            if abs(delta_angle) <  tolerance_angular:
-                target_reached = True
-            else:
-                # If not, rotate in the appropriate direction
-                move_cmd.angular.z = copysign(speed_angular, -1 * delta_angle)                
-                self.cmd_vel.publish(move_cmd)
-                rospy.sleep(tick)
-
+                last_angle = self.odom_angle
+                turn_angle = 0
+                
+                # Alternate directions between tests
+                reverse = -reverse
+                angular_speed  = reverse * self.speed
+                
+                while abs(turn_angle) < abs(self.test_angle):
+                    if rospy.is_shutdown():
+                        return
+                    move_cmd = Twist()
+                    move_cmd.angular.z = angular_speed
+                    self.cmd_vel.publish(move_cmd)
+                    r.sleep()
+                 
+                    # Get the current rotation angle from tf                   
+                    self.odom_angle = self.get_odom_angle()
+                    
+                    # Compute how far we have gone since the last measurement
+                    delta_angle = self.odom_angular_scale_correction * normalize_angle(self.odom_angle - last_angle)
+                    
+                    # Add to our total angle so far
+                    turn_angle += delta_angle
+                    last_angle = self.odom_angle
+                
+                # Stop the robot
+                self.cmd_vel.publish(Twist())
+                
+                # Update the status flag
+                self.target_reached = True
+                params = {'target_reached': 'True'}
+                dyn_client.update_configuration(params)
+                
+            rospy.sleep(0.5) 
+                    
         # Stop the robot
         self.cmd_vel.publish(Twist())
         
-    def quat_to_angle(self, quat):                                                        
-        rot = PyKDL.Rotation.Quaternion(quat.x, quat.y, quat.z, quat.w)      
-        return rot.GetRPY()[2]
-    
-    def normalize_angle(self, angle):                                                     
-        res = angle                                                                 
-        while res > pi:                                                             
-            res -= 2.0*pi                                                           
-        while res < -pi:                                                            
-            res += 2.0*pi                                                           
-        return res
+    def get_odom_angle(self):
+        # Get the current transform between the odom and base frames
+        try:
+            (trans, rot)  = self.tf_listener.lookupTransform(self.odom_frame, self.base_frame, rospy.Time(0))
+        except (tf.Exception, tf.ConnectivityException, tf.LookupException):
+            rospy.loginfo("TF Exception")
+            return
         
-    def update_odom(self, msg):
-        with self.lock:                                     
-            #angle = self.quat_to_angle(msg.pose.pose.orientation)  
-            q = msg.pose.pose.orientation
-            self.q_odom_angle = PyKDL.Rotation.Quaternion(q.x, q.y, q.z, q.w)                                 
-            #self.odom_time = msg.header.stamp  
+        # Convert the rotation from a quaternion to an Euler angle
+        return quat_to_angle(Quaternion(*rot))
+            
+    def dynamic_reconfigure_callback(self, config, level):
+        self.test_angle =  radians(config['test_angle'])
+        self.speed = config['speed']
+        self.tolerance = radians(config['tolerance'])
+        self.odom_angular_scale_correction = config['odom_angular_scale_correction']
+        self.target_reached = config['target_reached']
+        
+        return config
         
     def shutdown(self):
         # Always stop the robot when shutting down the node
@@ -129,5 +151,5 @@ class CalibrateAngular():
 if __name__ == '__main__':
     try:
         CalibrateAngular()
-    except rospy.ROSInterruptException:
+    except:
         rospy.loginfo("Calibration terminated.")
