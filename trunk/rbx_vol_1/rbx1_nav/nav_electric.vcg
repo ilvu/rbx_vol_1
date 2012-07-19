@@ -93,11 +93,19 @@ Mouse\ Goal\ Pose.Shaft\ Length=0.5
 Mouse\ Goal\ Pose.Shaft\ Radius=0.1
 Mouse\ Goal\ Pose.Shape=0
 Mouse\ Goal\ Pose.Topic=/move_base_simple/goal
+Odometry\ EKF.Angle\ Tolerance=0.05
+Odometry\ EKF.ColorR=1
+Odometry\ EKF.ColorG=0.643137
+Odometry\ EKF.ColorB=0
+Odometry\ EKF.Enabled=1
+Odometry\ EKF.Keep=100
+Odometry\ EKF.Position\ Tolerance=0.1
+Odometry\ EKF.Topic=/odom_ekf
 Odometry.Angle\ Tolerance=0.1
 Odometry.ColorR=0.870588
 Odometry.ColorG=0.784314
 Odometry.ColorB=0.0588235
-Odometry.Enabled=1
+Odometry.Enabled=0
 Odometry.Keep=100
 Odometry.Position\ Tolerance=0.1
 Odometry.Topic=/odom
@@ -171,8 +179,8 @@ Robot\:\ Robot\ Model\ Link\ standoff_kinect_1_linkShow\ Trail=0
 Tool\ 2D\ Nav\ GoalTopic=/move_base_simple/goal
 Tool\ 2D\ Pose\ EstimateTopic=initialpose
 Camera\ Type=rviz::FixedOrientationOrthoViewController
-Camera\ Config=234.763 -0.680431 4.82881 -0.544842 -0.707107 -3.31053e-11 1.67439e-09 0.707107
-Property\ Grid\ State=selection=;expanded=.Global Options,Odometry.Enabled,Marker.Enabled.Marker.Namespaces;scrollpos=0,7;splitterpos=141,284;ispageselected=1
+Camera\ Config=181.8 -0.515855 4.82881 -0.52064 -0.707107 -3.31053e-11 1.67439e-09 0.707107
+Property\ Grid\ State=selection=.Global Options;expanded=.Global Options,Odometry EKF.Enabled,Marker.Enabled.Marker.Namespaces;scrollpos=0,0;splitterpos=147,295;ispageselected=1
 [Display0]
 Name=Grid
 Package=rviz
@@ -182,38 +190,42 @@ Name=Odometry
 Package=rviz
 ClassName=rviz::OdometryDisplay
 [Display2]
+Name=Odometry EKF
+Package=rviz
+ClassName=rviz::OdometryDisplay
+[Display3]
 Name=Robot Model
 Package=rviz
 ClassName=rviz::RobotModelDisplay
-[Display3]
+[Display4]
 Name=Map
 Package=rviz
 ClassName=rviz::MapDisplay
-[Display4]
+[Display5]
 Name=LocalPlan
 Package=rviz
 ClassName=rviz::PathDisplay
-[Display5]
+[Display6]
 Name=GlobalPlan
 Package=rviz
 ClassName=rviz::PathDisplay
-[Display6]
+[Display7]
 Name=Marker
 Package=rviz
 ClassName=rviz::MarkerDisplay
-[Display7]
+[Display8]
 Name=Laser Scan
 Package=rviz
 ClassName=rviz::LaserScanDisplay
-[Display8]
+[Display9]
 Name=Mouse Goal Pose
 Package=rviz
 ClassName=rviz::PoseDisplay
-[Display9]
+[Display10]
 Name=Goal Pose
 Package=rviz
 ClassName=rviz::PoseDisplay
-[Display10]
+[Display11]
 Name=Inflated Obstacles
 Package=rviz
 ClassName=rviz::GridCellsDisplay
